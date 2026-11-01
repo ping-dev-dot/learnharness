@@ -76,6 +76,23 @@ describe("PracticeDock", () => {
 		assert.match(html, /data-testid="practice-dock-bar"/);
 		assert.match(html, /Show that the sum is even\./);
 	});
+
+	it("expanded with hasPriorAttempt: compacts task and labels field as feedback response", () => {
+		const html = renderToStaticMarkup(
+			<PracticeDock
+				problemCallId="call_p1"
+				input={{ statement: "Show that the sum is even." }}
+				expanded={true}
+				hasPriorAttempt={true}
+				onExpand={() => {}}
+				onSubmit={() => {}}
+			/>,
+		);
+		assert.match(html, /data-testid="practice-dock"/);
+		assert.match(html, /Show task/);
+		assert.match(html, /YOUR THINKING \(FEEDBACK RESPONSE\)/);
+		assert.match(html, /Submit reply/);
+	});
 });
 
 // ── the transcript cards ─────────────────────────────────────────────────────

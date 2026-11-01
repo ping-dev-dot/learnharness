@@ -462,6 +462,16 @@ export function Chat({
 	const activeProblemRef = useRef(activeProblem);
 	activeProblemRef.current = activeProblem;
 
+	const hasPriorPracticeAttempt = useMemo(() => {
+		if (!activeProblem) return false;
+		return nativeMessages.some(
+			(m) =>
+				(m as { role?: string }).role === "custom" &&
+				(m as { customType?: string }).customType === "practice-thinking" &&
+				(m as { details?: { problemCallId?: string } }).details?.problemCallId === activeProblem.toolCallId,
+		);
+	}, [activeProblem, nativeMessages]);
+
 	const localStream = status === "submitted" || status === "streaming";
 	const busy = localStream || turnInFlight;
 	const busyRef = useRef(busy);
@@ -1315,7 +1325,7 @@ export function Chat({
 								spellCheck={false}
 								aria-label="Session title"
 								title="Rename this session"
-								className="lh-no-drag min-w-[8ch] max-w-[70%] shrink-0 bg-transparent font-title text-3xl tracking-tight caret-current outline-none [field-sizing:content]"
+								className="lh-no-drag min-w-[8ch] max-w-[70%] shrink-0 bg-transparent font-title text-3xl max-sm:text-xl tracking-tight caret-current outline-none [field-sizing:content]"
 							/>
 							{/* flex-1 spacer during rename too, so the chips stay at
 							    the right edge; clicks here commit via the header
@@ -1336,7 +1346,7 @@ export function Chat({
 								setTitleDraft(titleText);
 								setRenaming(true);
 							}}
-							className="lh-no-drag -mx-1.5 min-w-4 shrink cursor-text truncate rounded-md px-1.5 text-left font-title text-3xl tracking-tight transition-colors hover:bg-accent"
+							className="lh-no-drag -mx-1.5 min-w-4 shrink cursor-text truncate rounded-md px-1.5 text-left font-title text-3xl max-sm:text-xl tracking-tight transition-colors hover:bg-accent"
 						>
 							{titleText}
 							</button>
@@ -1682,6 +1692,7 @@ export function Chat({
 					initialQuestionDraft={pending ? questionDraft(pending.key)?.form : undefined}
 					onSaveQuestionDraft={(form) => { if (pending) saveQuestionDraft(pending.key, { form }); }}
 					practice={activeProblem}
+					hasPriorPracticeAttempt={hasPriorPracticeAttempt}
 					compactionRunning={compacting}
 					onSubmitThinking={submitThinking}
 					chatId={chatId}
@@ -1913,6 +1924,7 @@ function DockOverlay({
 	initialQuestionDraft,
 	onSaveQuestionDraft,
 	practice,
+	hasPriorPracticeAttempt = false,
 	compactionRunning,
 	onSubmitThinking,
 	requiresReveal,
@@ -1945,6 +1957,7 @@ function DockOverlay({
 	 *  {toolCallId, input} — dock ownership exactly like a pending
 	 *  question (the composer is replaced); null in teaching sessions. */
 	practice: { toolCallId: string; input: unknown } | null;
+	hasPriorPracticeAttempt?: boolean;
 	/** (commit, text) — the practice dock's two submit lanes. */
 	onSubmitThinking: (text: string) => void;
 	/** Teach-phase pending question: arrives collapsed behind the reveal button (W5). */
@@ -2114,7 +2127,7 @@ function DockOverlay({
 	const reserveRef = useRef(0);
 	const offer = useCallback((blockH: number) => {
 		const next = blockH + GRADIENT_H;
-		if (next <= reserveRef.current + 0.5 && pendingRef.current) return;
+		if (next <= reserveRef.current + 0.5 && pendingRef.current && !expandedRef.current) return;
 		// Stamp growth at the source, including child-only field resizes, so
 		// stick-to-bottom's catch-up is not mistaken for the learner leaving.
 		if (shouldStampGeometryMute(next, reserveRef.current, pendingRef.current)) geometryAtRef.current = Date.now();
@@ -2150,11 +2163,18 @@ function DockOverlay({
 		const content = el?.firstElementChild as HTMLElement | null | undefined;
 		if (!el || !content) return;
 		let prevH = content.getBoundingClientRect().height;
+		let prevClientH = el.clientHeight;
 		const ro = new ResizeObserver(() => {
+			const clientH = el.clientHeight;
+			if (Math.abs(clientH - prevClientH) > 0.5) {
+				geometryAtRef.current = Date.now();
+				prevClientH = clientH;
+			}
 			const h = content.getBoundingClientRect().height;
 			if (h > prevH + 0.5) growthAtRef.current = Date.now();
 			prevH = Math.max(prevH, h);
 		});
+		ro.observe(el);
 		ro.observe(content);
 		return () => ro.disconnect();
 	}, [scrollRef]);
@@ -2251,6 +2271,7 @@ function DockOverlay({
 			if (Date.now() - growthAtRef.current < 400) return;
 			const d = el.scrollHeight - el.clientHeight - el.scrollTop;
 			if (expandedRef.current) {
+				if (blockRef.current?.contains(document.activeElement)) return;
 				// INTENT-GATED FOLD (owner ruling, 2026-10-05): distance alone
 				// folded on stick-to-bottom's catch-up transients; a real fold
 				// needs the distance AND stick-to-bottom agreeing the learner
@@ -2333,7 +2354,7 @@ function DockOverlay({
 	return (
 		<div className="pointer-events-none absolute inset-x-0 bottom-0" style={{ right: sbInset }}>
 			<div className="h-24 bg-gradient-to-t from-background via-background/85 to-transparent" />
-			<div ref={blockRef} className="relative bg-background pb-5">
+			<div ref={blockRef} className="relative bg-background pb-[max(1.25rem,env(safe-area-inset-bottom))]">
 				<div className={DOCK}>
 					<div ref={viewportRef} data-dock-viewport="" className="pointer-events-auto">
 					<div ref={bodyRef}>
@@ -2385,6 +2406,7 @@ function DockOverlay({
 									initialDraft={initialQuestionDraft}
 									onSaveDraft={onSaveQuestionDraft}
 									onEscape={dictationCancel}
+									onDismissRequest={() => window.dispatchEvent(new CustomEvent("lh:kbd-abort-turn"))}
 									dictationClaim={!revealPending}
 									compactionRunning={compactionRunning}
 								/>
@@ -2399,7 +2421,9 @@ function DockOverlay({
 									}}
 									onSubmit={onSubmitThinking}
 									onEscape={dictationCancel}
+									onDismissRequest={() => window.dispatchEvent(new CustomEvent("lh:kbd-abort-turn"))}
 									compactionRunning={compactionRunning}
+									hasPriorAttempt={hasPriorPracticeAttempt}
 								/>
 							) : (
 								composer

@@ -5,7 +5,7 @@ import { ChevronRightIcon } from "lucide-react";
 import { ToolContentResponse } from "@/components/ai-elements/message";
 import { Button } from "@/components/ui/button";
 import { joinDictation, useDictationTarget } from "@/components/dictation";
-import { useEnterSubmits } from "@/components/enter-submits";
+import { shouldEnterSubmit, useEnterSubmits } from "@/components/enter-submits";
 import { PathInput } from "@/components/path-input";
 import { cn } from "@/lib/utils";
 
@@ -47,14 +47,36 @@ export interface PracticeDockProps {
 	 *  and say so in the hint row. The server registry is the real gate;
 	 *  this is the affordance. */
 	compactionRunning?: boolean;
+	/** Touch-first skip/dismiss affordance (mobile has no Escape key). */
+	onDismissRequest?: () => void;
+	/** Whether the learner has already submitted at least one thinking trace for this problem. */
+	hasPriorAttempt?: boolean;
 }
 
-export function PracticeDock({ problemCallId, input, expanded, onExpand, onSubmit, onEscape, compactionRunning = false }: PracticeDockProps) {
+export function PracticeDock({
+	problemCallId,
+	input,
+	expanded,
+	onExpand,
+	onSubmit,
+	onEscape,
+	compactionRunning = false,
+	onDismissRequest,
+	hasPriorAttempt = false,
+}: PracticeDockProps) {
 	const [thinking, setThinking] = useState("");
 	// Ref MIRRORS the field ("nothing gets lost", the question-dock
 	// discipline): a submit resuming after `await finishDictation()` reads
 	// the tail, never a stale closure.
 	const thinkingRef = useRef("");
+
+	const [statementUserToggled, setStatementUserToggled] = useState<boolean | null>(null);
+	const prevProblemIdRef = useRef(problemCallId);
+	if (prevProblemIdRef.current !== problemCallId) {
+		prevProblemIdRef.current = problemCallId;
+		setStatementUserToggled(null);
+	}
+	const statementOpen = statementUserToggled !== null ? statementUserToggled : !hasPriorAttempt;
 
 	useDictationTarget(
 		useCallback(
@@ -105,12 +127,42 @@ export function PracticeDock({ problemCallId, input, expanded, onExpand, onSubmi
 			{/* The agent's half: the 'Problem' eyebrow (mirroring the quiz
 			    cards' label row — owner round, 2026-10-05) + the statement,
 			    markdown + LaTeX rendered, capped by the measured column
-			    (--dock-max-h; the old fixed 40vh cut long problems short). */}
+			    (--dock-max-h; the old fixed 40vh cut long problems short).
+			    When a prior attempt was already submitted, the problem statement
+			    collapses into a compact toggle bar so the learner sees the agent's
+			    transcript feedback and follow-up question right above the dock. */}
 			<div data-dock-scroll-area="" className="max-h-[var(--dock-max-h,40vh)] overflow-y-auto px-4 pt-3 pb-2">
-				<div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Problem</div>
-				<div className="lh-prose text-[15px]">
-					<ToolContentResponse>{input.statement}</ToolContentResponse>
+				<div className="mb-1 flex items-center justify-between">
+					<div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Problem</div>
+					{hasPriorAttempt && (
+						<button
+							type="button"
+							onClick={() => setStatementUserToggled(!statementOpen)}
+							className="flex cursor-pointer items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+						>
+							<ChevronRightIcon className={cn("size-3.5 transition-transform", statementOpen && "rotate-90")} />
+							<span>{statementOpen ? "Hide task" : "Show task"}</span>
+						</button>
+					)}
 				</div>
+				{statementOpen ? (
+					<div className="lh-prose text-[15px]">
+						<ToolContentResponse>{input.statement}</ToolContentResponse>
+					</div>
+				) : (
+					<button
+						type="button"
+						onClick={() => setStatementUserToggled(true)}
+						className="flex w-full cursor-pointer items-center justify-between text-left text-xs text-muted-foreground hover:text-foreground py-0.5"
+					>
+						<span className="truncate pr-2 text-[13px] text-foreground/80 font-normal">
+							{input.statement.split("\n")[0]}
+						</span>
+						<span className="shrink-0 text-[11px] text-primary/80 hover:underline">
+							Show task
+						</span>
+					</button>
+				)}
 			</div>
 
 			{/* The learner's half: Enter SENDS (owner round 2, 2026-10-05);
@@ -120,7 +172,7 @@ export function PracticeDock({ problemCallId, input, expanded, onExpand, onSubmi
 				className="m-1.5 rounded-[10px] border border-border/70 bg-background/60 transition-colors focus-within:border-primary/50"
 			>
 				<div className="px-2.5 pt-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-					YOUR THINKING
+					{hasPriorAttempt ? "YOUR THINKING (FEEDBACK RESPONSE)" : "YOUR THINKING"}
 				</div>
 				<PathInput
 					value={thinking}
@@ -139,12 +191,12 @@ export function PracticeDock({ problemCallId, input, expanded, onExpand, onSubmi
 						}
 						// Enter SENDS — the single lane (owner round 2, 2026-10-05);
 						// Shift+Enter is the newline, ⌘/Ctrl+Enter the chord too.
-						if (e.key === "Enter" && (!e.shiftKey || e.metaKey || e.ctrlKey)) {
+						if (shouldEnterSubmit(e)) {
 							e.preventDefault();
 							submit();
 						}
 					}}
-					placeholder="Work here, think out loud."
+					placeholder={hasPriorAttempt ? "Reply to the feedback above, work out the next step…" : "Work here, think out loud."}
 					className={cn(
 						"field-sizing-content lh-input max-h-64 min-h-16 w-full resize-none bg-transparent px-2.5 pb-2 outline-none placeholder:text-muted-foreground",
 					)}
@@ -154,7 +206,17 @@ export function PracticeDock({ problemCallId, input, expanded, onExpand, onSubmi
 				    one p-1 row. Corner radii concentric: shell 16 − m-1.5 (6) =
 				    field 10 − p-1 (4) = button 6. */}
 				<div className="flex items-center justify-between gap-2 p-1">
-					<span aria-hidden className="pl-1.5 text-xs text-muted-foreground">
+					{onDismissRequest && (
+						<button
+							type="button"
+							data-testid="practice-dismiss"
+							onClick={onDismissRequest}
+							className="hidden [@media(pointer:coarse)]:inline-flex h-9 items-center rounded-[6px] px-2.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
+						>
+							Skip
+						</button>
+					)}
+					<span aria-hidden className="pl-1.5 text-xs text-muted-foreground [@media(pointer:coarse)]:hidden">
 						{compactionRunning ? "compacting session…" : "↵ submits · ⇧↵ newline"}
 					</span>
 					<Button
@@ -164,7 +226,7 @@ export function PracticeDock({ problemCallId, input, expanded, onExpand, onSubmi
 						onClick={() => submit()}
 						className="ml-auto h-9 rounded-[6px] px-3.5 text-sm font-medium"
 					>
-						Submit thinking
+						{hasPriorAttempt ? "Submit reply" : "Submit thinking"}
 					</Button>
 				</div>
 			</div>
