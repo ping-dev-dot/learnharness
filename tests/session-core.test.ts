@@ -24,7 +24,7 @@ import { afterEach, describe, it } from "node:test";
 import { absorbed, pendingCallTool, SessionModel } from "../components/session-core.ts";
 import type { ChatInput } from "../src/core/input-events.ts";
 import type { LhMessage } from "../src/core/native-messages.ts";
-import { newUserMessage, newAnswerResult, newThinkingMessage, needsContinuation, endsInDismissal, pendingQuestionOf } from "../src/core/native-messages.ts";
+import { newMessageId, newUserMessage, newAnswerResult, newThinkingMessage, needsContinuation, endsInDismissal, pendingQuestionOf } from "../src/core/native-messages.ts";
 import { endsInFailedTurn, newCompactionMarker, newPlanBlockMessage, projectView } from "../src/core/index.ts";
 import { dismissedAnswer } from "../src/core/question-core.ts";
 import { buildAnswer, type QuestionData } from "../src/core/question-core.ts";
@@ -1765,5 +1765,76 @@ describe("absorbed — the custom role (the doubled thinking card)", () => {
 		const customs = m.getState().nativeMessages.filter((x) => (x as { role?: string }).role === "custom");
 		assert.equal(customs.length, 1, "the server copy replaced the optimistic one — no doubling");
 		assert.equal((customs[0] as { id?: string }).id, "srv_1");
+	});
+});
+
+describe("non-secure HTTP context resilience (crypto.randomUUID undefined)", () => {
+	it("newMessageId and newPlanBlockMessage mint ids when crypto.randomUUID is absent", () => {
+		const originalUUID = crypto.randomUUID;
+		try {
+			// Simulate non-secure HTTP browser context where window.isSecureContext is false
+			// and crypto.randomUUID is undefined per W3C Web Cryptography specification.
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			delete (crypto as any).randomUUID;
+
+			const msgId = newMessageId();
+			assert.ok(msgId.startsWith("msg_"), `expected msg_ prefix, got ${msgId}`);
+			assert.ok(msgId.length > 10, "minted non-empty id");
+
+			const planMsg = newPlanBlockMessage("call_p1", { steps: [] });
+			assert.ok(planMsg.id.startsWith("pb_"), `expected pb_ prefix, got ${planMsg.id}`);
+		} finally {
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			(crypto as any).randomUUID = originalUUID;
+		}
+	});
+
+	it("send succeeds and emits POST /api/chat when crypto.randomUUID is absent", async () => {
+		const originalUUID = crypto.randomUUID;
+		let posted = false;
+		globalThis.fetch = dietFetch({
+			stream: () => sseResponse("turn-settled", "[DONE]"),
+			onPost: () => {
+				posted = true;
+			},
+		});
+
+		try {
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			delete (crypto as any).randomUUID;
+
+			const m = model();
+			const res = await m.send({ type: "text", text: "hello without secure context" });
+			assert.ok(res, "send returned accepted");
+			assert.ok(posted, "POST /api/chat was dispatched");
+			assert.notEqual(m.getState().status, "error");
+		} finally {
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			(crypto as any).randomUUID = originalUUID;
+		}
+	});
+
+	it("send thinking succeeds and dispatches when crypto.randomUUID is absent", async () => {
+		const originalUUID = crypto.randomUUID;
+		let posted = false;
+		globalThis.fetch = dietFetch({
+			stream: () => sseResponse("turn-settled", "[DONE]"),
+			onPost: () => {
+				posted = true;
+			},
+		});
+
+		try {
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			delete (crypto as any).randomUUID;
+
+			const m = model();
+			const res = await m.send({ type: "thinking", problemCallId: "call_prob1", text: "1+4=5" });
+			assert.ok(res, "thinking send accepted");
+			assert.ok(posted, "POST /api/chat was dispatched for thinking");
+		} finally {
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			(crypto as any).randomUUID = originalUUID;
+		}
 	});
 });

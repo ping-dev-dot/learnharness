@@ -302,6 +302,11 @@ export function runPiTurn(spec: PiTurnSpec): PiTurnHandle {
 				start(controller) {
 					const encoder = new TextEncoder();
 					let closed = false;
+					try {
+						controller.enqueue(encoder.encode(": ping\n\n"));
+					} catch {
+						closed = true;
+					}
 					sub = {
 						push(event) {
 							if (closed) return;

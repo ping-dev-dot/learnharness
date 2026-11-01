@@ -693,27 +693,28 @@ export class SessionModel {
 		// write-ahead will persist (inputAppends), with LOCAL ids so
 		// adoption can tell them from the record's absorbed copies.
 		const optimistic: LhMessage[] = [];
-		if (input.type === "text") optimistic.push({ ...newUserMessage(input.text), id: localId() });
-		else if (input.type === "thinking") {
-			// The practice submissions (2026-10-04): the marker lands
-			// optimistically — the card renders from its details the
-			// moment the button fires.
-			optimistic.push({ ...newThinkingMessage(input.problemCallId, input.text), id: localId() });
-		} else if (input.type === "next") {
-			// The move-on signal (owner round 16): the NEXT PROBLEM line
-			// renders the instant the chip/Enter fires.
-			optimistic.push({ ...newNextMessage(), id: localId() });
-		} else if (input.type === "answer") {
-			const tool = pendingCallTool([...this.base, ...this.tail], input.toolCallId) ?? "quiz";
-			const result = { ...newAnswerResult(input.toolCallId, tool, input.answer), id: localId() };
-			optimistic.push(result);
-			this.unconfirmedAnswers.set(result.id, expectedKey ?? input.toolCallId);
-		}
-		if (optimistic.length > 0) this.mutate(() => {
-			this.tail = [...this.tail, ...optimistic];
-		});
 		let accepted = false;
 		try {
+			if (input.type === "text") optimistic.push({ ...newUserMessage(input.text), id: localId() });
+			else if (input.type === "thinking") {
+				// The practice submissions (2026-10-04): the marker lands
+				// optimistically — the card renders from its details the
+				// moment the button fires.
+				optimistic.push({ ...newThinkingMessage(input.problemCallId, input.text), id: localId() });
+			} else if (input.type === "next") {
+				// The move-on signal (owner round 16): the NEXT PROBLEM line
+				// renders the instant the chip/Enter fires.
+				optimistic.push({ ...newNextMessage(), id: localId() });
+			} else if (input.type === "answer") {
+				const tool = pendingCallTool([...this.base, ...this.tail], input.toolCallId) ?? "quiz";
+				const result = { ...newAnswerResult(input.toolCallId, tool, input.answer), id: localId() };
+				optimistic.push(result);
+				this.unconfirmedAnswers.set(result.id, expectedKey ?? input.toolCallId);
+			}
+			if (optimistic.length > 0) this.mutate(() => {
+				this.tail = [...this.tail, ...optimistic];
+			});
+
 			// SUBMITS ARE NOT ABORTABLE BY VIEW TEARDOWN (owner, 2026-10-10 —
 			// the dead-session-start postmortem): the POST must NOT ride
 			// consumeAbort. Diet A's abort-on-unmount (session.ts's stop())
@@ -851,10 +852,13 @@ export class SessionModel {
 		const subject = pendingQuestionOf([...this.base, ...this.tail]);
 		if (questionKey !== undefined && (subject?.key !== questionKey || subject.toolCallId !== toolCallId)) return;
 		const tool = pendingCallTool([...this.base, ...this.tail], toolCallId) ?? "quiz";
-		this.mutate(() => {
-			this.tail = [...this.tail, { ...newAnswerResult(toolCallId, tool, answer), id: localId() }];
-		});
+		let optimisticId: string | null = null;
 		try {
+			const result = { ...newAnswerResult(toolCallId, tool, answer), id: localId() };
+			optimisticId = result.id;
+			this.mutate(() => {
+				this.tail = [...this.tail, result];
+			});
 			const res = await this.fetch(`/api/chats/${this.chatId}/dismiss`, {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
@@ -862,6 +866,11 @@ export class SessionModel {
 			});
 			if (!res.ok) throw new Error(`The dismissal failed (${res.status}).`);
 		} catch (err) {
+			if (optimisticId !== null) {
+				this.mutate(() => {
+					this.tail = this.tail.filter(m => m.id !== optimisticId);
+				});
+			}
 			this.setError((err as Error).message);
 		}
 	}
@@ -872,10 +881,13 @@ export class SessionModel {
 	 *  returns; the conclude synthesis rides the user's next input. */
 	async dismissProblem(problemCallId: string): Promise<void> {
 		if (!this.readyRef) return;
-		this.mutate(() => {
-			this.tail = [...this.tail, { ...newProblemDismissedMarker(problemCallId), id: localId() }];
-		});
+		let optimisticId: string | null = null;
 		try {
+			const marker = { ...newProblemDismissedMarker(problemCallId), id: localId() };
+			optimisticId = marker.id;
+			this.mutate(() => {
+				this.tail = [...this.tail, marker];
+			});
 			const res = await this.fetch(`/api/chats/${this.chatId}/dismiss`, {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
@@ -883,6 +895,11 @@ export class SessionModel {
 			});
 			if (!res.ok) throw new Error(`The dismissal failed (${res.status}).`);
 		} catch (err) {
+			if (optimisticId !== null) {
+				this.mutate(() => {
+					this.tail = this.tail.filter(m => m.id !== optimisticId);
+				});
+			}
 			this.setError((err as Error).message);
 		}
 	}

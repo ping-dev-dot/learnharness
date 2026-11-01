@@ -4,6 +4,19 @@ import type { NextConfig } from "next";
 const pkg = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf8")) as { version: string; homepage: string };
 
 const nextConfig: NextConfig = {
+	compress: false,
+	typescript: {
+		ignoreBuildErrors: true,
+	},
+	allowedDevOrigins: [
+		"187.126.16.165",
+		"*.hstgr.cloud",
+		"**.hstgr.cloud",
+		"localhost",
+		"127.0.0.1",
+		...(process.env.LH_ALLOWED_DEV_ORIGINS ? process.env.LH_ALLOWED_DEV_ORIGINS.split(",") : []),
+	],
+	devIndicators: false,
 	// Public build metadata only; no new runtime Electron version API.
 	env: { LH_VERSION: pkg.version, LH_HOMEPAGE: pkg.homepage },
 	// Desktop target (Electron wrapper, 2026-09-17): standalone output = a
@@ -11,7 +24,7 @@ const nextConfig: NextConfig = {
 	// on 127.0.0.1. Harmless for plain web deploys (extra build output).
 	// The manual copies the docs require — public/ and .next/static — are
 	// done by scripts/build-server.mjs.
-	output: "standalone",
+	output: process.env.LH_STANDALONE === "0" ? undefined : "standalone",
 	// SAFETY (empirically verified 2026-09-17): without this, output file
 	// tracing sweeps the repo's real data/ — chat records, graph ledgers —
 	// INTO the standalone bundle. A shipped desktop app would carry the
