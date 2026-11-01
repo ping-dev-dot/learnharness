@@ -66,7 +66,7 @@
 import { useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { NotesImportErrors, useNotesImport } from "@/components/notes-import.tsx";
 import Link from "next/link";
-import { FileTextIcon, ListTreeIcon, Loader2Icon, SearchIcon, SettingsIcon, UploadIcon, WaypointsIcon } from "lucide-react";
+import { FileTextIcon, ListTreeIcon, Loader2Icon, SearchIcon, SettingsIcon, Trash2Icon, UploadIcon, WaypointsIcon } from "lucide-react";
 import { incrementalLayout, propositionSessionHref, type GraphCostSummary, type GraphNode, type GraphSnapshot } from "@/src/core";
 import { planCostLabel } from "@/components/usage-format";
 import { GraphCanvasRenderer, type GraphRenderSettings } from "./graph-canvas.ts";
@@ -885,7 +885,7 @@ export function GraphChromeRow({
 							placeholder="Search nodes…"
 							aria-label="Search nodes"
 							spellCheck={false}
-							className="h-7 w-full rounded-lg border bg-background pl-8 text-xs outline-none placeholder:text-muted-foreground focus:border-ring"
+							className="h-7 w-full rounded-lg border bg-background pl-8 text-xs max-sm:text-base outline-none placeholder:text-muted-foreground focus:border-ring"
 						/>
 					</div>
 					</Hint>
@@ -906,7 +906,7 @@ export function GraphChromeRow({
 							className="flex h-7 items-center gap-1.5 rounded-lg px-2.5 text-xs text-muted-foreground transition-colors hover:bg-accent"
 						>
 							<ListTreeIcon className="size-3" />
-							Chains
+							<span className="max-[480px]:hidden">Chains</span>
 						</button>
 					</Hint>
 				</div>
@@ -940,7 +940,7 @@ export function GraphChromeRow({
 					className="flex h-7 items-center gap-1.5 rounded-lg px-2.5 text-xs text-muted-foreground transition-colors hover:bg-accent disabled:opacity-50"
 				>
 						<UploadIcon className="size-3" />
-						{importing ? "Importing…" : "Import notes…"}
+						<span className="max-[480px]:hidden">{importing ? "Importing…" : "Import notes…"}</span>
 					</button>
 				</Hint>
 			</div>
@@ -1648,7 +1648,18 @@ export function GraphView({
 					// over home.tsx's drag surface (2026-09-17).
 					className="lh-no-drag absolute z-10 w-80 max-w-[calc(100%-1rem)] rounded-xl border bg-card p-4 text-left shadow-lg"
 				>
-					<div className="text-sm font-medium leading-snug">{selected.node.name}</div>
+					<div className="flex items-start justify-between gap-2">
+						<div className="text-sm font-medium leading-snug">{selected.node.name}</div>
+						<button
+							type="button"
+							data-testid="detail-delete-node"
+							aria-label="Delete node"
+							onClick={() => setDeletingNode({ id: selected.node.id, name: selected.node.name })}
+							className="shrink-0 rounded p-1 text-muted-foreground/70 transition-colors hover:bg-accent hover:text-destructive"
+						>
+							<Trash2Icon className="size-3.5" />
+						</button>
+					</div>
 					<div className="mt-1 text-xs leading-relaxed text-muted-foreground">{selected.node.statement}</div>
 					{selected.sourceIds.length > 0 ? (
 						<div className="mt-3 flex flex-col gap-1">

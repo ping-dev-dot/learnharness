@@ -3,7 +3,7 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { MaximizeIcon, MinusIcon, PlusIcon, XIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { fitGraphView, fitZoomFor, zoomedGraphView, type Viewport } from "@/components/pan-zoom";
+import { fitGraphView, fitZoomFor, zoomedGraphView, pinchStepView, type Viewport } from "@/components/pan-zoom";
 import { renderMermaid } from "@/components/mermaid-render";
 import { MermaidError } from "@/components/mermaid-error";
 import { Hint } from "@/components/ui/hint";
@@ -173,7 +173,22 @@ export function MermaidOverlay({
 	}, [fitZoom, box, size]);
 
 	const dragRef = useRef<{ px: number; py: number; x: number; y: number; moved: boolean } | null>(null);
+	const pointersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
+	const pinchDistRef = useRef<number | null>(null);
+
 	const startDrag = (e: React.PointerEvent<HTMLDivElement>) => {
+		pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+		if (pointersRef.current.size === 2) {
+			const pts = Array.from(pointersRef.current.values());
+			const p1 = pts[0];
+			const p2 = pts[1];
+			if (p1 && p2) {
+				pinchDistRef.current = Math.hypot(p1.x - p2.x, p1.y - p2.y);
+			}
+			dragRef.current = null;
+			setPanning(false);
+			return;
+		}
 		if (e.button !== 0) return;
 		if ((e.target as HTMLElement).closest("button")) return;
 		if (atFloor) return;
@@ -183,6 +198,30 @@ export function MermaidOverlay({
 		e.currentTarget.setPointerCapture(e.pointerId);
 	};
 	const moveDrag = (e: React.PointerEvent<HTMLDivElement>) => {
+		if (pointersRef.current.has(e.pointerId)) {
+			pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+		}
+		if (pointersRef.current.size === 2 && pinchDistRef.current !== null) {
+			const pts = Array.from(pointersRef.current.values());
+			const p1 = pts[0];
+			const p2 = pts[1];
+			if (p1 && p2) {
+				const dist = Math.hypot(p1.x - p2.x, p1.y - p2.y);
+				if (pinchDistRef.current > 0 && dist > 0) {
+					const ratio = dist / pinchDistRef.current;
+					const el = viewportRef.current;
+					const rect = el?.getBoundingClientRect() ?? { left: 0, top: 0 };
+					const mid = {
+						x: (p1.x + p2.x) / 2 - rect.left,
+						y: (p1.y + p2.y) / 2 - rect.top,
+					};
+					setView((v) => pinchStepView(v, ratio, fitZoom, mid, box, size));
+					userAdjustedRef.current = true;
+				}
+				pinchDistRef.current = dist;
+			}
+			return;
+		}
 		const d = dragRef.current;
 		if (!d) return;
 		d.moved = true;
@@ -191,6 +230,10 @@ export function MermaidOverlay({
 		);
 	};
 	const endDrag = (e: React.PointerEvent<HTMLDivElement>) => {
+		pointersRef.current.delete(e.pointerId);
+		if (pointersRef.current.size < 2) {
+			pinchDistRef.current = null;
+		}
 		const d = dragRef.current;
 		if (d) {
 			dragRef.current = null;

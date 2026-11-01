@@ -2,6 +2,7 @@
 
 import { useCallback } from "react";
 import { joinDictation, useDictationTarget } from "@/components/dictation";
+import { shouldEnterSubmit } from "@/components/enter-submits";
 import { PathInput } from "@/components/path-input";
 
 /**
@@ -81,7 +82,7 @@ export function ReadingThinkingField({
 					// (and the universal ⌘/Ctrl+Enter) opens it — the dictation
 					// flush lands HERE first via the caller's finishDictation,
 					// so spoken thoughts ride along. Shift+Enter stays a newline.
-					if (e.key === "Enter" && onOpen !== undefined && (!e.shiftKey || e.metaKey || e.ctrlKey)) {
+					if (onOpen !== undefined && shouldEnterSubmit(e)) {
 						e.preventDefault();
 						e.stopPropagation();
 						onOpen();

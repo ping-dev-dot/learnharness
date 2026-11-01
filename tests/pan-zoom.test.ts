@@ -9,7 +9,7 @@
 
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { FIT_ZOOM_MAX, ZOOM_MAX, fitGraphView, fitZoomFor, zoomedGraphView } from "../components/pan-zoom.ts";
+import { FIT_ZOOM_MAX, ZOOM_MAX, fitGraphView, fitZoomFor, zoomedGraphView, pinchStepView } from "../components/pan-zoom.ts";
 
 describe("fitZoomFor", () => {
 	it("binds on the axis that runs out of room (wide box → width)", () => {
@@ -68,5 +68,19 @@ describe("zoomedGraphView", () => {
 		const view = { x: -37, y: 12, zoom: 1 };
 		const out = zoomedGraphView(view, 1, floor, { x: 0, y: 0 }, box, viewport);
 		assert.equal(out, view);
+	});
+});
+
+describe("pinchStepView", () => {
+	const box = { w: 800, h: 400 };
+	const viewport = { w: 400, h: 300 };
+	const floor = fitZoomFor(box, viewport);
+
+	it("scales view by distRatio around midpoint", () => {
+		const view = { x: 0, y: 0, zoom: 1 };
+		const out = pinchStepView(view, 1.5, floor, { x: 100, y: 100 }, box, viewport);
+		assert.equal(out.zoom, 1.5);
+		assert.equal(100 - out.x, 100 * 1.5);
+		assert.equal(100 - out.y, 100 * 1.5);
 	});
 });

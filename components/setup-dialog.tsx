@@ -38,6 +38,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { isCoarsePointer } from "@/components/enter-submits";
 import { useBackdropDismiss } from "@/components/backdrop-dismiss";
 import type React from "react";
 import { type ModelCatalogEntry, type ModelSlotName, type ModelsSettings, CUSTOM_PROVIDER } from "@/src/core";
@@ -204,8 +205,8 @@ export function SetupKeysBody({
 								aria-label={`${provider.label} key`}
 								data-testid="setup-key-input"
 								disabled={saving}
-								autoFocus
-								className="h-7 min-w-0 flex-1 rounded-sm border border-border bg-background px-1.5 font-mono text-xs text-foreground outline-none placeholder:text-muted-foreground/60 focus:border-muted-foreground/50"
+								autoFocus={!isCoarsePointer()}
+								className="h-7 min-w-0 flex-1 rounded-sm border border-border bg-background px-1.5 font-mono text-xs max-sm:text-base text-foreground outline-none placeholder:text-muted-foreground/60 focus:border-muted-foreground/50"
 							/>
 							<button
 								type="button"
@@ -455,7 +456,7 @@ function OpenSetupDialog({ onClose, onDone }: SetupDialogProps) {
 				aria-modal="true"
 				aria-label="Set up your models"
 				data-testid="setup-dialog"
-				className="settings-dialog-pop flex max-h-[85vh] w-[640px] max-w-[90vw] flex-col overflow-hidden rounded-md border border-border bg-card shadow-xl"
+				className="settings-dialog-pop flex max-h-[85vh] w-[640px] max-w-[90vw] max-sm:max-w-[96vw] flex-col overflow-hidden rounded-md border border-border bg-card shadow-xl"
 				onClick={(e) => e.stopPropagation()}
 			>
 				<header className="flex h-15 shrink-0 items-center gap-3 border-b border-border px-5">

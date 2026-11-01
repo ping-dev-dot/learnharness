@@ -79,4 +79,15 @@ describe("computeMenuPlacement — cap + position", () => {
 		assert.equal(p.style.left, 100);
 		assert.ok(!("right" in p.style));
 	});
+
+	it("clamps horizontal edges against viewport margin and sets maxWidth for mobile", () => {
+		// Anchor right near the very edge (375px mobile viewport)
+		const p = computeMenuPlacement({ top: 100, bottom: 140, left: 370, right: 375 }, { width: 375, height: 667 }, 200, "down", "right");
+		assert.equal(p.style.right, 8); // clamped to EDGE = 8
+		assert.equal(p.style.maxWidth, "calc(100vw - 16px)");
+
+		// Anchor left clamped to EDGE
+		const q = computeMenuPlacement({ top: 100, bottom: 140, left: 2, right: 10 }, { width: 375, height: 667 }, 200, "down", "left");
+		assert.equal(q.style.left, 8); // clamped to EDGE = 8
+	});
 });

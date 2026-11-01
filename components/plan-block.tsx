@@ -12,7 +12,7 @@ import { layout as dagreLayout } from "dagre-d3-es/src/dagre/index.js";
 // Mermaid's default flowchart edge curve: dagre's waypoints drawn through
 // d3's curveBasis (the exact recipe dagre-d3's own renderer uses).
 import { curveBasis, line } from "d3-shape";
-import { fitGraphView, fitZoomFor, zoomedGraphView, type Viewport } from "@/components/pan-zoom";
+import { fitGraphView, fitZoomFor, zoomedGraphView, pinchStepView, type Viewport } from "@/components/pan-zoom";
 import type { PlanBlockData, PlanNodeStatus, PlanTree } from "@/src/core";
 import { derivedNodeStatus, derivePlanStatuses } from "@/src/core";
 import { Hint } from "@/components/ui/hint";
@@ -840,7 +840,22 @@ export function PlanPopup({ messages, onClose }: { messages: readonly PopupMessa
 	// per-frame — the transition is off while dragging or it rubber-bands.
 	const [panning, setPanning] = useState(false);
 	const dragRef = useRef<{ px: number; py: number; x: number; y: number; moved: boolean } | null>(null);
+	const pointersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
+	const pinchDistRef = useRef<number | null>(null);
+
 	const startDrag = (e: React.PointerEvent<HTMLDivElement>) => {
+		pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+		if (pointersRef.current.size === 2) {
+			const pts = Array.from(pointersRef.current.values());
+			const p1 = pts[0];
+			const p2 = pts[1];
+			if (p1 && p2) {
+				pinchDistRef.current = Math.hypot(p1.x - p2.x, p1.y - p2.y);
+			}
+			dragRef.current = null;
+			setPanning(false);
+			return;
+		}
 		if (e.button !== 0) return;
 		if ((e.target as HTMLElement).closest("button")) return;
 		if (atFloor) return;
@@ -850,6 +865,30 @@ export function PlanPopup({ messages, onClose }: { messages: readonly PopupMessa
 		e.currentTarget.setPointerCapture(e.pointerId);
 	};
 	const moveDrag = (e: React.PointerEvent<HTMLDivElement>) => {
+		if (pointersRef.current.has(e.pointerId)) {
+			pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+		}
+		if (pointersRef.current.size === 2 && pinchDistRef.current !== null) {
+			const pts = Array.from(pointersRef.current.values());
+			const p1 = pts[0];
+			const p2 = pts[1];
+			if (p1 && p2) {
+				const dist = Math.hypot(p1.x - p2.x, p1.y - p2.y);
+				if (pinchDistRef.current > 0 && dist > 0) {
+					const ratio = dist / pinchDistRef.current;
+					const el = viewportRef.current;
+					const rect = el?.getBoundingClientRect() ?? { left: 0, top: 0 };
+					const mid = {
+						x: (p1.x + p2.x) / 2 - rect.left,
+						y: (p1.y + p2.y) / 2 - rect.top,
+					};
+					setView((v) => pinchStepView(v, ratio, fitZoom, mid, box, size));
+					userAdjustedRef.current = true;
+				}
+				pinchDistRef.current = dist;
+			}
+			return;
+		}
 		const d = dragRef.current;
 		if (!d) return;
 		d.moved = true;
@@ -858,6 +897,10 @@ export function PlanPopup({ messages, onClose }: { messages: readonly PopupMessa
 		);
 	};
 	const endDrag = (e: React.PointerEvent<HTMLDivElement>) => {
+		pointersRef.current.delete(e.pointerId);
+		if (pointersRef.current.size < 2) {
+			pinchDistRef.current = null;
+		}
 		const d = dragRef.current;
 		if (d) {
 			dragRef.current = null;

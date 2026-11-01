@@ -37,6 +37,31 @@
 import { useEffect, useRef } from "react";
 import { isTypingSurface } from "@/src/core";
 
+/** True on touchscreen devices (phones/tablets without a mouse). Pure/safe under SSR & tests. */
+export function isCoarsePointer(): boolean {
+	return (
+		typeof window !== "undefined" &&
+		typeof window.matchMedia === "function" &&
+		window.matchMedia("(pointer: coarse)").matches
+	);
+}
+
+/**
+ * Pure decision: does Enter submit the field or insert a newline?
+ * On touch keyboards (coarse pointer), plain Enter makes a newline so typing
+ * paragraphs doesn't accidentally trigger a premature submit.
+ * Cmd/Ctrl+Enter always submits regardless of pointer type.
+ */
+export function shouldEnterSubmit(
+	e: { key: string; shiftKey: boolean; metaKey: boolean; ctrlKey: boolean },
+	coarse = isCoarsePointer(),
+): boolean {
+	if (e.key !== "Enter") return false;
+	if (e.metaKey || e.ctrlKey) return true;
+	if (coarse) return false;
+	return !e.shiftKey;
+}
+
 /** Overlay roots whose buttons keep native Enter (hand-rolled menus mark
  *  themselves data-lh-menu; Radix poppers/dialogs carry their own attrs). */
 const OVERLAY_ROOTS = '[data-lh-menu], [data-radix-popper-content-wrapper], [role="menu"], [role="dialog"]';
@@ -64,6 +89,7 @@ export function useEnterSubmits(submit: () => void): void {
 	submitRef.current = submit;
 	useEffect(() => {
 		const onKey = (e: KeyboardEvent) => {
+			if (isCoarsePointer()) return;
 			if (e.key !== "Enter") return;
 			if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
 			if (isTypingSurface(e)) return;

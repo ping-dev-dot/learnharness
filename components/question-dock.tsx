@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowDownIcon, ChevronRightIcon, PlayIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { finishDictation, isDictationActive, joinDictation, useDictationTarget } from "@/components/dictation";
-import { useEnterSubmits } from "@/components/enter-submits";
+import { shouldEnterSubmit, useEnterSubmits } from "@/components/enter-submits";
 import { PathInput } from "@/components/path-input";
 import { ToolContentResponse } from "@/components/ai-elements/message";
 import { cn } from "@/lib/utils";
@@ -96,6 +96,8 @@ export interface QuestionDockProps {
 	 *  and say so in the hint row. The server registry is the real gate;
 	 *  this is the affordance. */
 	compactionRunning?: boolean;
+	/** Mobile touch affordance: dismiss / skip pending turn / dock when no Escape key available. */
+	onDismissRequest?: () => void;
 }
 
 export function QuestionDock({
@@ -109,6 +111,7 @@ export function QuestionDock({
 	initialDraft,
 	onSaveDraft,
 	onEscape,
+	onDismissRequest,
 	phase = "probe",
 	dictationClaim = true,
 	compactionRunning = false,
@@ -166,6 +169,7 @@ export function QuestionDock({
 					initialDraft={initialDraft}
 					onSaveDraft={onSaveDraft}
 					onEscape={onEscape}
+					onDismissRequest={onDismissRequest}
 					dictationClaim={dictationClaim}
 					compactionRunning={compactionRunning}
 				/>
@@ -263,6 +267,7 @@ function QuestionDockForm({
 	initialDraft,
 	onSaveDraft,
 	onEscape,
+	onDismissRequest,
 	dictationClaim = true,
 	compactionRunning = false,
 }: Omit<QuestionDockProps, "expanded" | "onExpand" | "reveal">) {
@@ -871,7 +876,7 @@ function QuestionDockForm({
 								}
 								// Chat convention: Enter submits, Shift+Enter is a newline;
 								// ⌘/Ctrl+Enter also submits (universal across the app).
-								if (e.key === "Enter" && (e.metaKey || e.ctrlKey || !e.shiftKey)) {
+								if (shouldEnterSubmit(e)) {
 									e.preventDefault();
 									submit();
 								}
@@ -900,7 +905,7 @@ function QuestionDockForm({
 								// THE STANDARD CHORD (owner round 5, 2026-10-05): Enter
 								// submits, Shift+Enter is a newline, ⌘/Ctrl+Enter works
 								// too — identical to the practice dock and the composer.
-								if (e.key === "Enter" && (!e.shiftKey || e.metaKey || e.ctrlKey)) {
+								if (shouldEnterSubmit(e)) {
 									e.preventDefault();
 									submit();
 								}
@@ -915,9 +920,25 @@ function QuestionDockForm({
 						/>
 					)}
 					<div className="flex items-center justify-between gap-2 p-1">
-						<span aria-hidden className="pl-1.5 text-xs text-muted-foreground">
-								{compactionRunning ? "compacting session…" : "↵ submits · ⇧↵ newline"}
-						</span>
+						{compactionRunning ? (
+							<span aria-hidden className="pl-1.5 text-xs text-muted-foreground">
+								compacting session…
+							</span>
+						) : (
+							<span aria-hidden className="pl-1.5 text-xs text-muted-foreground [@media(pointer:coarse)]:hidden">
+								↵ submits · ⇧↵ newline
+							</span>
+						)}
+						{onDismissRequest && (
+							<button
+								type="button"
+								data-testid="question-dismiss"
+								onClick={onDismissRequest}
+								className="hidden [@media(pointer:coarse)]:inline-flex h-9 items-center rounded-[6px] px-2.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
+							>
+								Skip
+							</button>
+						)}
 						<Button
 							type="submit"
 							disabled={!canSubmit || compactionRunning}

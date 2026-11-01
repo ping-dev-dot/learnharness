@@ -13,7 +13,7 @@
 import assert from "node:assert/strict";
 import { parseHTML } from "linkedom";
 import { describe, it } from "node:test";
-import { buttonKeepsNativeEnter } from "../components/enter-submits.ts";
+import { buttonKeepsNativeEnter, shouldEnterSubmit, isCoarsePointer } from "../components/enter-submits.ts";
 import { blurAfterPointerClick } from "../components/focus-hygiene.ts";
 
 const { document } = parseHTML("<html><body></body></html>");
@@ -78,5 +78,26 @@ describe("blurAfterPointerClick (focus hygiene)", () => {
 		};
 		blurAfterPointerClick({ detail: 0, currentTarget: b });
 		assert.equal(blurred, false);
+	});
+});
+
+describe("shouldEnterSubmit (pointer / modifier chord law)", () => {
+	it("on desktop (coarse = false): plain Enter submits, Shift+Enter does not, Cmd/Ctrl+Enter submits", () => {
+		assert.equal(shouldEnterSubmit({ key: "Enter", shiftKey: false, metaKey: false, ctrlKey: false }, false), true);
+		assert.equal(shouldEnterSubmit({ key: "Enter", shiftKey: true, metaKey: false, ctrlKey: false }, false), false);
+		assert.equal(shouldEnterSubmit({ key: "Enter", shiftKey: false, metaKey: true, ctrlKey: false }, false), true);
+		assert.equal(shouldEnterSubmit({ key: "Enter", shiftKey: false, metaKey: false, ctrlKey: true }, false), true);
+		assert.equal(shouldEnterSubmit({ key: "a", shiftKey: false, metaKey: false, ctrlKey: false }, false), false);
+	});
+
+	it("on touch screen (coarse = true): plain Enter inserts newline (does NOT submit), Cmd/Ctrl+Enter submits", () => {
+		assert.equal(shouldEnterSubmit({ key: "Enter", shiftKey: false, metaKey: false, ctrlKey: false }, true), false);
+		assert.equal(shouldEnterSubmit({ key: "Enter", shiftKey: true, metaKey: false, ctrlKey: false }, true), false);
+		assert.equal(shouldEnterSubmit({ key: "Enter", shiftKey: false, metaKey: true, ctrlKey: false }, true), true);
+		assert.equal(shouldEnterSubmit({ key: "Enter", shiftKey: false, metaKey: false, ctrlKey: true }, true), true);
+	});
+
+	it("isCoarsePointer returns false in SSR / test environments", () => {
+		assert.equal(isCoarsePointer(), false);
 	});
 });

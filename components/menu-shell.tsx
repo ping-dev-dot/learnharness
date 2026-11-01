@@ -2,6 +2,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
+import { isCoarsePointer } from "@/components/enter-submits";
 
 /**
  * THE shared menu shell (menu standardization, fix wave chunk B): one
@@ -92,10 +93,20 @@ export function computeMenuPlacement(
 	const avail = side === "down" ? availDown : availUp;
 	const maxHeight = Math.max(MIN_USABLE, Math.min(CAP_VH * viewport.height, avail));
 	const horizontal: Record<string, number> =
-		align === "right" ? { right: viewport.width - rect.right } : { left: rect.left };
+		align === "right"
+			? { right: Math.max(EDGE, viewport.width - rect.right) }
+			: { left: Math.max(EDGE, rect.left) };
 	const vertical: Record<string, number> =
 		side === "down" ? { top: rect.bottom + GAP } : { bottom: viewport.height - rect.top + GAP };
-	return { side, style: { ...horizontal, ...vertical }, maxHeight };
+	return {
+		side,
+		style: {
+			...horizontal,
+			...vertical,
+			maxWidth: `calc(100vw - ${EDGE * 2}px)`,
+		},
+		maxHeight,
+	};
 }
 
 /** The shared shell. Exactly one anchor seam: pass `anchorRef` (a live
@@ -148,7 +159,11 @@ export function MenuShell({
 		const el = menuRef.current;
 		if (!el) return;
 		const input = el.querySelector<HTMLElement>("input");
-		(input ?? el).focus();
+		if (isCoarsePointer()) {
+			el.focus();
+		} else {
+			(input ?? el).focus();
+		}
 	}, [placed]);
 
 	// The standard arrow machine for menus WITHOUT a search (owner: when a

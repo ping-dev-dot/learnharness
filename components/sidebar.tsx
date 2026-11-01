@@ -84,9 +84,16 @@ declare global {
 	}
 }
 
-const SidebarContext = createContext<{ open: boolean; toggle: () => void }>({
+export const MOBILE_DRAWER_BREAKPOINT = 768;
+
+const SidebarContext = createContext<{
+	open: boolean;
+	toggle: () => void;
+	closeOnMobile: () => void;
+}>({
 	open: false,
 	toggle: () => {},
+	closeOnMobile: () => {},
 });
 
 export function useSidebar() {
@@ -129,8 +136,9 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
 		void window.lh?.getZoom?.().then(setZoomVar);
 
 		const stored = localStorage.getItem(STORAGE_KEY);
-		// Default: open (first run introduces the sidebar).
-		setOpen(stored === null ? true : stored === "1");
+		const isMobileView = typeof window !== "undefined" && window.innerWidth < MOBILE_DRAWER_BREAKPOINT;
+		// Default: open on desktop (first run introduces the sidebar), closed on mobile
+		setOpen(stored === null ? !isMobileView : stored === "1");
 		setMounted(true);
 		return () => off?.();
 	}, []);
@@ -165,6 +173,12 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
 		});
 	}, [narrow, open]);
 
+	const closeOnMobile = useCallback(() => {
+		if (typeof window !== "undefined" && window.innerWidth < MOBILE_DRAWER_BREAKPOINT) {
+			setOpen(false);
+		}
+	}, []);
+
 	// ⌘B: the global shortcut dispatches kbdEventForAction("toggle-sidebar")
 	// and the context answers on exactly that name — the shared spelling
 	// is the fix for the interlude bug (the listener sat on the pre-
@@ -179,7 +193,7 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
 	}, [toggle]);
 
 	return (
-		<SidebarContext.Provider value={{ open: open && !narrow, toggle }}>
+		<SidebarContext.Provider value={{ open: open && !narrow, toggle, closeOnMobile }}>
 			{/* transitions gated on mount: no slide-in flash on page load */}
 			<div className={cn("flex h-dvh", mounted && "[&_.sidebar-motion]:transition-[width,margin,opacity]")}>{children}</div>
 		</SidebarContext.Provider>
@@ -291,6 +305,7 @@ export function SessionRow({
 	onOpen,
 	kbdSelected = false,
 	onContextMenu,
+	onOptionsClick,
 }: {
 	chat: ChatListItem;
 	active: boolean;
@@ -300,36 +315,52 @@ export function SessionRow({
 	kbdSelected?: boolean;
 	/** Right-click opens the context menu (wave 6: Rename / Delete). */
 	onContextMenu?: (e: React.MouseEvent<HTMLButtonElement>) => void;
+	/** Touch / click options button to open context menu on mobile or hover. */
+	onOptionsClick?: (e: React.MouseEvent<HTMLButtonElement>) => void;
 }) {
 	return (
-		<button
-			type="button"
-			onClick={onOpen}
-			onContextMenu={onContextMenu}
-			data-testid={kbdSelected ? "session-row-kbd" : "session-row"}
-			className={cn(
-				"relative mb-0.5 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors hover:bg-accent",
-				active && "bg-accent",
-				kbdSelected && !active && "bg-accent/60 ring-1 ring-border",
+		<div className="group relative mb-0.5 flex w-full items-center">
+			<button
+				type="button"
+				onClick={onOpen}
+				onContextMenu={onContextMenu}
+				data-testid={kbdSelected ? "session-row-kbd" : "session-row"}
+				className={cn(
+					"relative flex w-full min-w-0 items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors hover:bg-accent",
+					active && "bg-accent",
+					kbdSelected && !active && "bg-accent/60 ring-1 ring-border",
+					onOptionsClick && "pr-8",
+				)}
+			>
+				<SessionStatus busy={chat.busy || chat.compacting} />
+				<span className="min-w-0 flex-1">
+					{/* Titles are the learner's/teacher's WORDS — Source Sans 3, the
+					    same voice the words were typed in (every input is lh-prose);
+					    the meta line below stays JetBrains Mono (machine data). One
+					    rule, finally applied to the picker too (owner, typography
+					    round): mono = chrome, Source Sans = human words. */}
+					<span className="block truncate font-prose text-(length:--lh-prose-size)">{chat.title}</span>
+					<span className="block text-xs text-muted-foreground">{sessionMeta(chat)}</span>
+				</span>
+				{/* The dumbbell rides the FAR RIGHT (owner round 6, 2026-10-05) —
+				    was left of the name; right-aligned keeps the titles flush with
+				    the teaching rows and reads cleaner. */}
+				{(chat.kind ?? "teach") === "practice" && (
+					<DumbbellIcon className="size-3.5 shrink-0 text-muted-foreground/70" aria-label="Practice session" />
+				)}
+			</button>
+			{onOptionsClick && (
+				<button
+					type="button"
+					aria-label="Session options"
+					data-testid="session-options-button"
+					onClick={onOptionsClick}
+					className="absolute right-1 top-1/2 -translate-y-1/2 flex size-6 items-center justify-center rounded text-muted-foreground opacity-0 hover:bg-accent hover:text-foreground group-hover:opacity-100 [@media(pointer:coarse)]:opacity-100"
+				>
+					<span className="text-sm font-semibold leading-none">⋯</span>
+				</button>
 			)}
-		>
-			<SessionStatus busy={chat.busy || chat.compacting} />
-			<span className="min-w-0 flex-1">
-				{/* Titles are the learner's/teacher's WORDS — Source Sans 3, the
-				    same voice the words were typed in (every input is lh-prose);
-				    the meta line below stays JetBrains Mono (machine data). One
-				    rule, finally applied to the picker too (owner, typography
-				    round): mono = chrome, Source Sans = human words. */}
-				<span className="block truncate font-prose text-(length:--lh-prose-size)">{chat.title}</span>
-				<span className="block text-xs text-muted-foreground">{sessionMeta(chat)}</span>
-			</span>
-			{/* The dumbbell rides the FAR RIGHT (owner round 6, 2026-10-05) —
-			    was left of the name; right-aligned keeps the titles flush with
-			    the teaching rows and reads cleaner. */}
-			{(chat.kind ?? "teach") === "practice" && (
-				<DumbbellIcon className="size-3.5 shrink-0 text-muted-foreground/70" aria-label="Practice session" />
-			)}
-		</button>
+		</div>
 	);
 }
 
@@ -390,7 +421,7 @@ export type SessionKindFilter = "teach" | "all" | "practice";
 const KIND_FILTER_KEY = "lh:session-kind-filter";
 
 function SessionsSidebar() {
-	const { open, toggle } = useSidebar();
+	const { open, toggle, closeOnMobile } = useSidebar();
 	const [chats, setChats] = useState<ChatListItem[] | null>(null);
 	const [query, setQuery] = useState("");
 	const [kindFilter, setKindFilter] = useState<SessionKindFilter>("all");
@@ -635,7 +666,7 @@ function SessionsSidebar() {
 	// buttons, so the index matches).
 	useEffect(() => {
 		if (kbdIndex === null) return;
-		listRef.current?.querySelectorAll("button")[kbdIndex]?.scrollIntoView({ block: "nearest" });
+		listRef.current?.querySelectorAll<HTMLElement>('[data-testid^="session-row"]')[kbdIndex]?.scrollIntoView({ block: "nearest" });
 	}, [kbdIndex]);
 
 	useEffect(() => {
@@ -646,10 +677,22 @@ function SessionsSidebar() {
 	}, [open, pathname, refresh]);
 
 	return (
-		<aside
-			className={cn("sidebar-motion shrink-0 overflow-hidden duration-200", open ? "w-72" : "w-0")}
-			aria-hidden={!open}
-		>
+		<>
+			{open && (
+				<div
+					data-testid="sidebar-backdrop"
+					onClick={closeOnMobile}
+					className="fixed inset-0 z-40 bg-black/40 backdrop-blur-xs md:hidden"
+					aria-hidden="true"
+				/>
+			)}
+			<aside
+				className={cn(
+					"sidebar-motion shrink-0 overflow-hidden duration-200 max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-50",
+					open ? "w-72" : "w-0",
+				)}
+				aria-hidden={!open}
+			>
 			<div className="flex h-full w-72 flex-col border-r bg-background">
 				{/* LH wordmark — the owner's header; close toggle sits at the edge.
 				    Merged chrome (2026-09-17): in Electron this band is the
@@ -673,6 +716,7 @@ function SessionsSidebar() {
 					>
 						<Link
 							href="/"
+							onClick={closeOnMobile}
 							aria-label="Home"
 							className="lh-no-drag flex size-9 shrink-0 items-center justify-center rounded-md transition-colors hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50"
 						>
@@ -700,7 +744,10 @@ function SessionsSidebar() {
 					<button
 						type="button"
 						data-testid="new-session"
-						onClick={() => void newSession()}
+						onClick={() => {
+							closeOnMobile();
+							void newSession();
+						}}
 						className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-xs uppercase tracking-wider text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
 					>
 						<PlusIcon className="size-3" />
@@ -710,7 +757,10 @@ function SessionsSidebar() {
 					<button
 						type="button"
 						data-testid="new-session-practice"
-						onClick={() => router.push("/chat/new?mode=practice")}
+						onClick={() => {
+							closeOnMobile();
+							router.push("/chat/new?mode=practice");
+						}}
 						className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-xs uppercase tracking-wider text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
 					>
 						<DumbbellIcon className="size-3" />
@@ -766,6 +816,7 @@ function SessionsSidebar() {
 									const target = shown![kbdIndex !== null && kbdIndex < n ? kbdIndex : 0];
 									if (!target) return;
 									e.preventDefault();
+									closeOnMobile();
 									router.push(`/chat/${target.id}`);
 									setKbdIndex(null);
 									e.currentTarget.blur();
@@ -773,7 +824,7 @@ function SessionsSidebar() {
 							}}
 							placeholder="Search…"
 							aria-label="Search sessions"
-							className="h-6 rounded-sm border-border bg-background pl-6 text-xs placeholder:text-muted-foreground/60"
+							className="h-6 max-sm:h-8 rounded-sm border-border bg-background pl-6 text-xs max-sm:text-base placeholder:text-muted-foreground/60"
 						/>
 						<SearchIcon className="pointer-events-none absolute left-1.5 top-1/2 size-3 -translate-y-1/2 text-muted-foreground/70" />
 					</span>
@@ -830,9 +881,15 @@ function SessionsSidebar() {
 									kbdSelected={i === kbdIndex}
 									onOpen={() => {
 										setKbdIndex(null);
+										closeOnMobile();
 										router.push(`/chat/${c.id}`);
 									}}
 									onContextMenu={(e) => openContext(e, c)}
+									onOptionsClick={(e) => {
+										e.stopPropagation();
+										ctxAnchorRef.current = e.currentTarget;
+										setCtxChatId(c.id);
+									}}
 								/>
 							),
 						)
@@ -853,7 +910,10 @@ function SessionsSidebar() {
 						<Hint label="Settings" action="open-settings" side="right">
 							<button
 								type="button"
-								onClick={() => openSettings()}
+								onClick={() => {
+									closeOnMobile();
+									openSettings();
+								}}
 								data-testid="settings-entry"
 								className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs uppercase tracking-wider text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
 							>
@@ -939,6 +999,7 @@ function SessionsSidebar() {
 					onDeleted={onDeleted}
 				/>
 			</aside>
+		</>
 	);
 }
 

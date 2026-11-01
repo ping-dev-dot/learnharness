@@ -596,9 +596,11 @@ export class GraphCanvasRenderer {
 	private simById = new Map<string, LayoutNode>();
 	private simActive = false;
 	private dragId: string | null = null;
+	private dragPointerId: number | null = null;
 	private dragOrigin: Pt | null = null;
 	private simMoved = false; // any real movement since the last commit
 	private commitTimer: ReturnType<typeof setTimeout> | null = null;
+	private activePointers = new Set<number>();
 
 	private frameId: number | null = null;
 	private dirty = true;
@@ -672,6 +674,13 @@ export class GraphCanvasRenderer {
 		// d3-zoom owns pan / wheel zoom-to-cursor / touch pinch; every
 		// transform change just marks dirty (draws happen in OUR loop).
 		this.zoomBehavior = zoom<HTMLCanvasElement, unknown>()
+			.filter((event: MouseEvent | TouchEvent | WheelEvent) => {
+				if ("touches" in event) {
+					if (event.touches.length >= 2) return true;
+					return this.dragId === null;
+				}
+				return !event.ctrlKey && !event.button;
+			})
 			.scaleExtent([0.02, 40])
 			.on("zoom", ({ transform }) => {
 				this.transform = transform;
@@ -691,6 +700,7 @@ export class GraphCanvasRenderer {
 		canvas.addEventListener("pointermove", this.onPointerMove);
 		canvas.addEventListener("pointerdown", this.onPointerDown);
 		canvas.addEventListener("pointerup", this.onPointerUp);
+		canvas.addEventListener("pointercancel", this.onPointerCancel);
 		canvas.addEventListener("pointerleave", this.onPointerLeave);
 		// Right-click → the caller's context menu (node interlude). Always
 		// preventDefault: the native menu on a full-bleed custom canvas is
@@ -905,6 +915,7 @@ export class GraphCanvasRenderer {
 		this.canvas.removeEventListener("pointermove", this.onPointerMove);
 		this.canvas.removeEventListener("pointerdown", this.onPointerDown);
 		this.canvas.removeEventListener("pointerup", this.onPointerUp);
+		this.canvas.removeEventListener("pointercancel", this.onPointerCancel);
 		this.canvas.removeEventListener("pointerleave", this.onPointerLeave);
 		this.canvas.removeEventListener("contextmenu", this.onContextMenu);
 		this.canvas.style.cursor = "";
@@ -957,6 +968,28 @@ export class GraphCanvasRenderer {
 	};
 
 	private onPointerDown = (e: PointerEvent) => {
+		this.activePointers.add(e.pointerId);
+		if (this.activePointers.size > 1) {
+			if (this.dragId) {
+				const n = this.simById.get(this.dragId);
+				if (n) {
+					n.fx = null;
+					n.fy = null;
+				}
+				this.dragId = null;
+				this.dragOrigin = null;
+				const ptr = this.dragPointerId;
+				this.dragPointerId = null;
+				this.canvas.style.cursor = "";
+				if (ptr !== null) {
+					try {
+						this.canvas.releasePointerCapture(ptr);
+					} catch {}
+				}
+				this.markDirty();
+			}
+			return;
+		}
 		// Primary button only (owner, polish round): a right-press must not
 		// pin the node — right-click belongs to the context menu alone, and
 		// the right-pointerup must never read as a click (the detail card
@@ -973,6 +1006,7 @@ export class GraphCanvasRenderer {
 			e.preventDefault();
 			try {
 				this.canvas.setPointerCapture(e.pointerId);
+				this.dragPointerId = e.pointerId;
 			} catch {
 				/* capture is best-effort */
 			}
@@ -992,14 +1026,17 @@ export class GraphCanvasRenderer {
 	};
 
 	private onPointerUp = (e: PointerEvent) => {
+		this.activePointers.delete(e.pointerId);
 		if (e.button !== 0) return; // right-click is context-menu territory
 		// Node press ending: click (no slop) → select; drag → release-and-relax.
 		if (this.dragId) {
 			const id = this.dragId;
 			this.dragId = null;
 			this.dragOrigin = null;
+			const ptr = this.dragPointerId ?? e.pointerId;
+			this.dragPointerId = null;
 			try {
-				this.canvas.releasePointerCapture(e.pointerId);
+				this.canvas.releasePointerCapture(ptr);
 			} catch {
 				/* already released */
 			}
@@ -1028,6 +1065,22 @@ export class GraphCanvasRenderer {
 		const node = this.pickAt(pos.x, pos.y);
 		if (node) this.callbacks.onSelect(node.id, pos);
 		else this.callbacks.onStageClick();
+	};
+
+	private onPointerCancel = (e: PointerEvent) => {
+		this.activePointers.delete(e.pointerId);
+		this.dragPointerId = null;
+		if (this.dragId) {
+			const n = this.simById.get(this.dragId);
+			if (n) {
+				n.fx = null;
+				n.fy = null;
+			}
+			this.dragId = null;
+			this.dragOrigin = null;
+			this.canvas.style.cursor = "";
+			this.markDirty();
+		}
 	};
 
 	/** Right-click: pick the node under the pointer, hand the position to

@@ -53,3 +53,15 @@ export function zoomedGraphView(
 	const k = zoom / view.zoom;
 	return { zoom, x: focus.x - (focus.x - view.x) * k, y: focus.y - (focus.y - view.y) * k };
 }
+
+/** Pinch-to-zoom step for multi-touch pointers. Zoom factor is distRatio around midpoint. Pure. */
+export function pinchStepView(
+	view: Viewport,
+	distRatio: number,
+	floor: number,
+	midpoint: { x: number; y: number },
+	box: { w: number; h: number },
+	viewport: { w: number; h: number },
+): Viewport {
+	return zoomedGraphView(view, distRatio, floor, midpoint, box, viewport);
+}
